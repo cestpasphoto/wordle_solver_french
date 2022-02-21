@@ -132,7 +132,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 	def estimator(w, p):
 		p_normalized = p/total
 		_, entropy = distribution_possibilities(w, dico_solutions)
-		remaining_moves = round( (1-p_normalized) * (1+(current_entropy-entropy)*2) , 2)
+		remaining_moves = round( (1-p_normalized) * (1.24+(current_entropy-entropy)*0.71) , 2)
 		#return remaining_moves, current_entropy-entropy
 		return remaining_moves
 
