@@ -217,7 +217,7 @@ def parse_user_input(length):
 
 ###################################################################################
 
-pickle_name = 'parsed_dictionary.pickle'
+pickle_name = 'parsed_fr_dictionary.pickle'
 try:
 	dico = pickle.load(open(pickle_name, 'rb'))
 except (OSError, IOError) as e:
