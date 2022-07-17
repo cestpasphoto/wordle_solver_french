@@ -72,7 +72,7 @@ def import_csv_worldlex(filename, existing_db, freq_field=None):
 
 	return result
 
-def save_to_pickle(result):
+def save_to_pickle(result, pickle_name):
 	for i in range(1, max_nb_chars+1):
 		most_probable_word = max(result[i].keys(), key = lambda x: result[i][x]) if result[i] else ''
 		print(f'Mots à {i} lettres: {len(result[i])} ({most_probable_word})')
@@ -127,7 +127,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 	if len(dico_solutions) * len(dico_admissible) > max_combinations_to_try:
 		nb_words = max(200, max_combinations_to_try//len(dico_solutions))
 		sorted_prob = sorted(dico_admissible.values(), reverse=True)
-		dico_admissible = {w:p for w,p in dico_admissible.items() if p > sorted_prob[nb_words]}
+		dico_admissible = {w:p for w,p in dico_admissible.items() if p >= sorted_prob[nb_words]}
 		print(f'   trop de mots à essayer, je teste les {len(dico_admissible)} plus populaires')	
 	def estimator(w, p):
 		p_normalized = p/total
@@ -145,7 +145,7 @@ def remove_based_on_result(dico_n, proposed_word, result_int):
 		w: p for w, p in dico_n.items()
 			if convert_result(compute_result(proposed_word, w)) == result_int
 	}
-	print(f'   taille du dictionnaire {len(dico_n)} -> {len(new_dico_n)} : {sorted(new_dico_n.keys(), key=lambda x: new_dico_n[x], reverse=True)[:5]}')
+	print(f'   taille du dictionnaire {len(dico_n)} --> {len(new_dico_n)}. Mots les plus populaires: {sorted(new_dico_n.keys(), key=lambda x: new_dico_n[x], reverse=True)[:5]}')
 	return new_dico_n
 
 def remove_based_on_first_letter(dico_n, c):
@@ -179,8 +179,8 @@ def online_simulation(dico_n):
 		dico_n = remove_based_on_first_letter(dico_n, user_input)
 		dico_solutions = dico_n
 	elif len(user_input) > 1:
-		result = convert_result(parse_user_input(len(user_input)))
-		dico_solutions = remove_based_on_result(dico_n, user_input, result)
+		word_trial, trial_result = parse_user_input(user_input)
+		dico_solutions = remove_based_on_result(dico_n, word_trial, trial_result)
 	else:
 		dico_solutions = dico_n
 
@@ -192,7 +192,7 @@ def online_simulation(dico_n):
 		else:
 			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
 		#estimates.append(entropy)
-		result = convert_result(parse_user_input(len(best_word_to_try)))
+		best_word_to_try, result = parse_user_input(best_word_to_try)
 		dico_solutions = remove_based_on_result(dico_solutions, best_word_to_try, result)
 
 	# Archivage infos
@@ -200,60 +200,79 @@ def online_simulation(dico_n):
 	#	archives.append( (entropy, i+1) )
 
 
-def parse_user_input(length):
+def parse_user_input(word_trial):
 	while True:
-		input_string = input('Résultat ? (1=mal placé, 2=bien placé, 0=sinon, x pour arrêter). Ex: "00211":   ')
+		input_string = input('Résultat ? (1=mal placé, 2=bien placé, 0=sinon, x=arrêter ou bien autre mot). Ex: "00211":   ')
+		input_string = input_string.rstrip().lstrip()
 		if input_string == 'x':
 			exit(1)
-		list_digits = list(input_string.rstrip().lstrip())
-		try:
-			list_digits = [int(x) for x in list_digits]
-			if len(list_digits) != length or min(list_digits) < 0 or max(list_digits) > 2:
-				raise Exception('bad digits')
-		except:
-			continue
 
-		return list_digits
+		if input_string.isalpha():
+			if len(input_string) == len(word_trial):
+				word_trial = input_string
+				print(f'  on change le mot essayé pour {word_trial}')
+				continue # Now enter result
+		else:
+			try:
+				list_digits = [int(x) for x in list(input_string)]
+				if len(list_digits) != len(word_trial) or min(list_digits) < 0 or max(list_digits) > 2:
+					raise Exception('bad digits')
+			except:
+				continue
+
+		return word_trial, convert_result(list_digits)
 
 ###################################################################################
 
-pickle_name = 'parsed_fr_dictionary.pickle'
-try:
+def main():
+	import argparse
+	parser = argparse.ArgumentParser(description='wordle guesser')
+	parser.add_argument('--fr'         , action='store_true', help='Use french dictionnary (default)')
+	parser.add_argument('--en'         , action='store_true', help='Use english dictionnary')
+	parser.add_argument('--build-dict' , action='store_true', help='Build dictionnary from list of words')
+	parser.add_argument('--words', '-w', default='top', choices=['all', 'top'], help='Which words to use: "all" or "top" (default)')
+	parser.add_argument('--prob',  '-p', default='equal', choices=['original', 'sqrt', 'equal', 'nosmall', 'sqrt_nosmall'], help='Choose words\
+probabilities: either original ones or bump very small probabilities or flattened a bit\
+(sqrt - good for AVERAGE difficulty games) or make it completely flat (equal - good for HARD games).')
+	parser.add_argument('word_to_guess', nargs='?', default='', help='If known, provide the word to guess to run non-interactive game')
+	args = parser.parse_args()
+
+	pickle_name = 'parsed_en_dictionary.pickle' if args.en and not args.fr else 'parsed_fr_dictionary.pickle'
+	if args.build_dict:
+		if args.en:
+			dico = import_csv_scrabble('Collins Scrabble Words (2019).txt')	# https://drive.google.com/file/d/1oGDf1wjWp5RF_X9C7HoedhIWMh5uJs8s/view
+			dico = import_csv_worldlex('Eng_US.Freq.2.txt', dico)			# http://www.lexique.org/?page_id=250
+		else:
+			dico = import_csv_scrabble('touslesmots.txt') 		# https://www.listesdemots.net/touslesmots.txt
+			dico = import_csv_worldlex('Fre.Freq.2.txt', dico)  # http://www.lexique.org/?page_id=250
+		save_to_pickle(dico, pickle_name)
+		print('le dictionnaire est maintenant prêt')
+		return
+
+	# Load dictionnary
 	dico = pickle.load(open(pickle_name, 'rb'))
-except (OSError, IOError) as e:
-	dico = import_csv_scrabble('touslesmots.txt') 		# https://www.listesdemots.net/touslesmots.txt
-	dico = import_csv_worldlex('Fre.Freq.2.txt', dico)  # http://www.lexique.org/?page_id=250
-	save_to_pickle(dico)
-	print('les dictionnaires sont maintenant charges')
+	if args.word_to_guess:
+		dico = dico[len(args.word_to_guess)]
+	else:
+		dico = dico[int(input('Combien de lettres ?  '))]
+	# Adjust words probability
+	if args.words == 'top':
+		dico = {w: p for w,p in dico.items() if p >= default_freq}
+	if args.prob == 'sqrt':
+		dico = {w: sqrt(p) for w,p in dico.items()}   						# Applatit histogramme de fréq des mots
+	elif args.prob == 'sqrt_nosmall':
+		dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()}   # Applatit histogramme de fréq des mots
+	elif args.prob == 'nosmall':
+		dico = {w: max(p,default_freq/100) for w,p in dico.items()}   		# Booste la probabilité des mots les moins courants
+	elif args.prob == 'equal':
+		dico = {w: 1+p/100 for w,p in dico.items()}   						# (quasi) équiprobabilité, tout en gardant la possibilité d'ordonner
 
-# import random
-# for _ in range(20):
-# 	for _ in range(10):
-# 		n = random.randrange(3,max_nb_chars+1)
-# 		dico_n = dico[n]
-# 		solution = random.choices(list(dico_n.keys()), weights=[int(p>10*default_freq) for _,p in dico_n.items()])[0]
-# 		print(solution)
-# 		dico_n = {w: max(p,default_freq/100) for w,p in dico_n.items()}
-# 		simulation(solution, dico_n)
-# 		estimates = []
-# 	for e in range(30):
-# 		e_min, e_max = (e-5)/10, (e+5)/10
-# 		nb_coups = [ i for e_,i in archives if e_min<=e_<e_max ]
-# 		nb_coups_avg = sum(nb_coups)/len(nb_coups) if nb_coups else 0.
-# 		print(f'{e/10};{nb_coups_avg}')
+	if args.word_to_guess:
+		if input('On suppose connaitre la 1e lettre ? (o/n):  ').lower() == 'o':
+			dico = remove_based_on_first_letter(dico, args.word_to_guess[0])
+		simulation(args.word_to_guess, dico)
+	else:
+		online_simulation(dico)
 
-if len(sys.argv) > 1:
-	solution = sys.argv[1]
-	dico = dico[len(solution)]
-	# dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()}   # Applatit histogramme de fréq des mots
-	dico = {w: max(p,default_freq/100) for w,p in dico.items()}
-	if input('On suppose connaitre la 1e lettre ? (o/n):  ').lower() == 'o':
-		dico = remove_based_on_first_letter(dico, solution[0])
-	simulation(solution, dico)
-	# print(archives)
-else:	
-	dico = dico[int(input('Combien de lettres ?  '))]
-	# dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()} # Applatit histogramme de fréq des mots
-	dico = {w: max(p,default_freq/100) for w,p in dico.items()}
-
-	online_simulation(dico)
+if __name__ == "__main__":
+	main()
