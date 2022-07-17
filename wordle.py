@@ -207,18 +207,18 @@ def parse_user_input(word_trial):
 		if input_string == 'x':
 			exit(1)
 
-		if input_string.isalpha():
-			if len(input_string) == len(word_trial):
-				word_trial = input_string
-				print(f'  on change le mot essayé pour {word_trial}')
-				continue # Now enter result
-		else:
-			try:
-				list_digits = [int(x) for x in list(input_string)]
-				if len(list_digits) != len(word_trial) or min(list_digits) < 0 or max(list_digits) > 2:
-					raise Exception('bad digits')
-			except:
-				continue
+		try:
+			if input_string.isalpha():
+				if len(input_string) == len(word_trial):
+					word_trial = input_string
+					print(f'  on change le mot essayé pour {word_trial}')
+					continue # Now enter result
+			else:
+					list_digits = [int(x) for x in list(input_string)]
+					if len(list_digits) != len(word_trial) or min(list_digits) < 0 or max(list_digits) > 2:
+						raise Exception('bad digits')
+		except:
+			continue
 
 		return word_trial, convert_result(list_digits)
 
@@ -231,7 +231,7 @@ def main():
 	parser.add_argument('--en'         , action='store_true', help='Use english dictionnary')
 	parser.add_argument('--build-dict' , action='store_true', help='Build dictionnary from list of words')
 	parser.add_argument('--words', '-w', default='top', choices=['all', 'top'], help='Which words to use: "all" or "top" (default)')
-	parser.add_argument('--prob',  '-p', default='equal', choices=['original', 'sqrt', 'equal', 'nosmall', 'sqrt_nosmall'], help='Choose words\
+	parser.add_argument('--prob',  '-p', default='hard', choices=['average', 'hard', 'original', 'sqrt', 'equal', 'nosmall', 'sqrt_nosmall'], help='Choose words\
 probabilities: either original ones or bump very small probabilities or flattened a bit\
 (sqrt - good for AVERAGE difficulty games) or make it completely flat (equal - good for HARD games).')
 	parser.add_argument('word_to_guess', nargs='?', default='', help='If known, provide the word to guess to run non-interactive game')
@@ -258,14 +258,14 @@ probabilities: either original ones or bump very small probabilities or flattene
 	# Adjust words probability
 	if args.words == 'top':
 		dico = {w: p for w,p in dico.items() if p >= default_freq}
-	if args.prob == 'sqrt':
+	if args.prob == 'sqrt' or args.prob == 'average':
 		dico = {w: sqrt(p) for w,p in dico.items()}   						# Applatit histogramme de fréq des mots
+	elif args.prob == 'equal' or args.prob == 'hard':
+		dico = {w: 1+p/100 for w,p in dico.items()}   						# (quasi) équiprobabilité, tout en gardant la possibilité d'ordonner
 	elif args.prob == 'sqrt_nosmall':
 		dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()}   # Applatit histogramme de fréq des mots
 	elif args.prob == 'nosmall':
 		dico = {w: max(p,default_freq/100) for w,p in dico.items()}   		# Booste la probabilité des mots les moins courants
-	elif args.prob == 'equal':
-		dico = {w: 1+p/100 for w,p in dico.items()}   						# (quasi) équiprobabilité, tout en gardant la possibilité d'ordonner
 
 	if args.word_to_guess:
 		if input('On suppose connaitre la 1e lettre ? (o/n):  ').lower() == 'o':
