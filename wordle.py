@@ -6,6 +6,7 @@ from math import log2, sqrt
 import numpy as np
 from tqdm import tqdm
 import sys
+from os.path import join, dirname
 
 max_nb_chars = 10
 base = [3**i for i in range(max_nb_chars+1)]
@@ -250,7 +251,7 @@ probabilities: either original ones or bump very small probabilities or flattene
 		return
 
 	# Load dictionnary
-	dico = pickle.load(open(pickle_name, 'rb'))
+	dico = pickle.load(open(join(dirname(__file__), pickle_name), 'rb'))
 	if args.word_to_guess:
 		dico = dico[len(args.word_to_guess)]
 	else:
