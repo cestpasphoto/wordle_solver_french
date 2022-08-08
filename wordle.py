@@ -5,7 +5,6 @@ import pickle
 from math import log2, sqrt
 import numpy as np
 from tqdm import tqdm
-import sys
 from os.path import join, dirname
 
 max_nb_chars = 10
