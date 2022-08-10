@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
 import unicodedata
-import pickle
-from math import log2, sqrt
+import json
+from math import sqrt
 import numpy as np
 from tqdm import tqdm
 from os.path import join, dirname
@@ -72,12 +72,12 @@ def import_csv_worldlex(filename, existing_db, freq_field=None):
 
 	return result
 
-def save_to_pickle(result, pickle_name):
+def save_to_json(result, json_name):
 	for i in range(1, max_nb_chars+1):
 		most_probable_word = max(result[i].keys(), key = lambda x: result[i][x]) if result[i] else ''
 		print(f'Mots à {i} lettres: {len(result[i])} ({most_probable_word})')
-	with open(pickle_name, 'wb') as f:
-		pickle.dump(result, f, pickle.HIGHEST_PROTOCOL)
+	with open(json_name, 'w') as f:
+		json.dump(result, f)
 
 
 ###############################################################################
@@ -237,7 +237,7 @@ probabilities: either original ones or bump very small probabilities or flattene
 	parser.add_argument('word_to_guess', nargs='?', default='', help='If known, provide the word to guess to run non-interactive game')
 	args = parser.parse_args()
 
-	pickle_name = 'parsed_en_dictionary.pickle' if args.en and not args.fr else 'parsed_fr_dictionary.pickle'
+	json_name = 'parsed_en_dictionary.json' if args.en and not args.fr else 'parsed_fr_dictionary.json'
 	if args.build_dict:
 		if args.en:
 			dico = import_csv_scrabble('Collins Scrabble Words (2019).txt')	# https://drive.google.com/file/d/1oGDf1wjWp5RF_X9C7HoedhIWMh5uJs8s/view
@@ -245,12 +245,12 @@ probabilities: either original ones or bump very small probabilities or flattene
 		else:
 			dico = import_csv_scrabble('touslesmots.txt') 		# https://www.listesdemots.net/touslesmots.txt
 			dico = import_csv_worldlex('Fre.Freq.2.txt', dico)  # http://www.lexique.org/?page_id=250
-		save_to_pickle(dico, pickle_name)
+		save_to_json(dico, json_name)
 		print('le dictionnaire est maintenant prêt')
 		return
 
 	# Load dictionnary
-	dico = pickle.load(open(join(dirname(__file__), pickle_name), 'rb'))
+	dico = json.load(open(join(dirname(__file__), json_name)))
 	if args.word_to_guess:
 		dico = dico[len(args.word_to_guess)]
 	else:
