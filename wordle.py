@@ -6,10 +6,12 @@ from math import sqrt
 import numpy as np
 from tqdm import tqdm
 from os.path import join, dirname
+import sys
 
 max_nb_chars = 10
 base = [3**i for i in range(max_nb_chars+1)]
 max_combinations_to_try = 2000000
+min_words_to_try = 200
 default_freq = 0.001
 
 estimates = []
@@ -125,7 +127,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 	current_entropy = compute_entropy(dico_solutions)
 	print(f'   entropie = {current_entropy:.02f} bit')
 	if len(dico_solutions) * len(dico_admissible) > max_combinations_to_try:
-		nb_words = max(200, max_combinations_to_try//len(dico_solutions))
+		nb_words = max(min_words_to_try, max_combinations_to_try//len(dico_solutions))
 		sorted_prob = sorted(dico_admissible.values(), reverse=True)
 		dico_admissible = {w:p for w,p in dico_admissible.items() if p >= sorted_prob[nb_words]}
 		print(f'   trop de mots à essayer, je teste les {len(dico_admissible)} plus populaires')	
@@ -136,7 +138,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 		#return remaining_moves, current_entropy-entropy
 		return remaining_moves
 
-	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False) ]
+	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False, disable='pyodide' in sys.modules) ]
 	entropy_list = sorted(entropy_list, key=lambda x: x[1])
 	return entropy_list
 
@@ -199,6 +201,43 @@ def online_simulation(dico_n):
 	#for i, entropy in enumerate(estimates[::-1]):
 	#	archives.append( (entropy, i+1) )
 
+def online_simulation_browser(dico_n):
+	import js
+	dico_solutions = dico_n
+	trials  = [js.document.getElementById("try_"+str(i)).value for i in range(5)]
+	results = js.results
+	print(trials, results)
+	message = ''
+
+	# Digest user inputs
+	i_last_word = -1
+	for i, (word_trial, trial_result) in enumerate(zip(trials, results)):
+		if len(word_trial) == int(js.n_total_char):
+			print('Input used:', word_trial, trial_result)
+			dico_solutions = remove_based_on_result(dico_solutions, word_trial, trial_result)
+			i_last_word = i
+		else:
+			if len(word_trial) > 0 or trial_result > 0:
+				print('Input not used:', word_trial, trial_result)
+				message += f'Warning: input not used -> {word_trial} {trial_result}'
+	message += f'{len(dico_solutions)} mot(s) possible(s) dont {sorted(dico_solutions.keys(), key=lambda x: dico_solutions[x], reverse=True)[:5]}'
+	best_words = ', '.join(sorted(dico_solutions.keys(), key=lambda x: dico_solutions[x], reverse=True)[:5])
+	js.hint_output.innerHTML = f'{len(dico_solutions)} mot(s) possible(s) dont: {best_words}'
+
+	# Now compute 
+	best_moves = expected_remaining_moves(dico_solutions, dico_n)
+	best_word_to_try, nb_moves = best_moves[0]
+
+	# Display
+	if len(best_moves) > 3:
+		message += f' - je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}'
+	else:
+		message += f' - je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés'
+
+	js.document.getElementById("try_"+str(i_last_word+1)).value = best_word_to_try.lower()
+	js.updateButtonsContent(i_last_word+1)
+	return message
+
 
 def parse_user_input(word_trial):
 	while True:
@@ -222,6 +261,36 @@ def parse_user_input(word_trial):
 
 		return word_trial, convert_result(list_digits)
 
+def load_dico_local(lang, nb_letters):
+	json_name = 'parsed_en_dictionary.json' if lang == 'en' else 'parsed_fr_dictionary.json'
+	dico = json.load(open(join(dirname(__file__), json_name)))
+	dico = dico[nb_letters]
+	return dico
+
+async def load_dico_remote(lang, nb_letters):
+	from pyodide.http import pyfetch
+	json_fr = 'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/parsed_fr_dictionary.json'
+	json_en = 'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/parsed_en_dictionary.json'
+	response = await pyfetch(json_fr if lang == 'fr' else json_en)
+	dico = await (response.json())
+	dico = dico[nb_letters]
+	return dico
+
+def adjust_dico(dico, top_words_only, prob):
+	# Adjust words probability
+	if top_words_only:
+		dico = {w: p for w,p in dico.items() if p >= default_freq}
+	if prob == 'sqrt' or prob == 'average':
+		dico = {w: sqrt(p) for w,p in dico.items()}   						# Applatit histogramme de fréq des mots
+	elif prob == 'equal' or prob == 'hard':
+		dico = {w: 1+p/100 for w,p in dico.items()}   						# (quasi) équiprobabilité, tout en gardant la possibilité d'ordonner
+	elif prob == 'sqrt_nosmall':
+		dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()}   # Applatit histogramme de fréq des mots
+	elif prob == 'nosmall':
+		dico = {w: max(p,default_freq/100) for w,p in dico.items()}   		# Booste la probabilité des mots les moins courants
+
+	return dico
+
 ###################################################################################
 
 def main():
@@ -237,7 +306,6 @@ probabilities: either original ones or bump very small probabilities or flattene
 	parser.add_argument('word_to_guess', nargs='?', default='', help='If known, provide the word to guess to run non-interactive game')
 	args = parser.parse_args()
 
-	json_name = 'parsed_en_dictionary.json' if args.en and not args.fr else 'parsed_fr_dictionary.json'
 	if args.build_dict:
 		if args.en:
 			dico = import_csv_scrabble('Collins Scrabble Words (2019).txt')	# https://drive.google.com/file/d/1oGDf1wjWp5RF_X9C7HoedhIWMh5uJs8s/view
@@ -245,27 +313,14 @@ probabilities: either original ones or bump very small probabilities or flattene
 		else:
 			dico = import_csv_scrabble('touslesmots.txt') 		# https://www.listesdemots.net/touslesmots.txt
 			dico = import_csv_worldlex('Fre.Freq.2.txt', dico)  # http://www.lexique.org/?page_id=250
+		json_name = 'parsed_en_dictionary.json' if args.en and not args.fr else 'parsed_fr_dictionary.json'
 		save_to_json(dico, json_name)
 		print('le dictionnaire est maintenant prêt')
 		return
 
 	# Load dictionnary
-	dico = json.load(open(join(dirname(__file__), json_name)))
-	if args.word_to_guess:
-		dico = dico[len(args.word_to_guess)]
-	else:
-		dico = dico[int(input('Combien de lettres ?  '))]
-	# Adjust words probability
-	if args.words == 'top':
-		dico = {w: p for w,p in dico.items() if p >= default_freq}
-	if args.prob == 'sqrt' or args.prob == 'average':
-		dico = {w: sqrt(p) for w,p in dico.items()}   						# Applatit histogramme de fréq des mots
-	elif args.prob == 'equal' or args.prob == 'hard':
-		dico = {w: 1+p/100 for w,p in dico.items()}   						# (quasi) équiprobabilité, tout en gardant la possibilité d'ordonner
-	elif args.prob == 'sqrt_nosmall':
-		dico = {w: sqrt(max(p,default_freq/100)) for w,p in dico.items()}   # Applatit histogramme de fréq des mots
-	elif args.prob == 'nosmall':
-		dico = {w: max(p,default_freq/100) for w,p in dico.items()}   		# Booste la probabilité des mots les moins courants
+	dico = load_dico_local('en' if args.en else 'fr', len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
+	dico = adjust_dico(dico, args.words == 'top', args.prob)
 
 	if args.word_to_guess:
 		if input('On suppose connaitre la 1e lettre ? (o/n):  ').lower() == 'o':
