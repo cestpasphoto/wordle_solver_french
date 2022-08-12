@@ -138,7 +138,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 		#return remaining_moves, current_entropy-entropy
 		return remaining_moves
 
-	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False, disable='pyodide' in sys.modules) ]
+	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False, disable=(sys.platform == 'emscripten')) ]
 	entropy_list = sorted(entropy_list, key=lambda x: x[1])
 	return entropy_list
 
@@ -201,28 +201,31 @@ def online_simulation(dico_n):
 	#for i, entropy in enumerate(estimates[::-1]):
 	#	archives.append( (entropy, i+1) )
 
-def online_simulation_browser(dico_n):
+def online_simulation_browser_filter(dico_n):
 	import js
 	dico_solutions = dico_n
 	trials  = [js.document.getElementById("try_"+str(i)).value for i in range(5)]
 	results = js.results
 	print(trials, results)
-	message = ''
 
 	# Digest user inputs
-	i_last_word = -1
 	for i, (word_trial, trial_result) in enumerate(zip(trials, results)):
 		if len(word_trial) == int(js.n_total_char):
 			print('Input used:', word_trial, trial_result)
 			dico_solutions = remove_based_on_result(dico_solutions, word_trial, trial_result)
-			i_last_word = i
 		else:
 			if len(word_trial) > 0 or trial_result > 0:
 				print('Input not used:', word_trial, trial_result)
-				message += f'Warning: input not used -> {word_trial} {trial_result}'
-	message += f'{len(dico_solutions)} mot(s) possible(s) dont {sorted(dico_solutions.keys(), key=lambda x: dico_solutions[x], reverse=True)[:5]}'
+				# message += f'Warning: input not used -> {word_trial} {trial_result}'
+	# message += f'{len(dico_solutions)} mot(s) possible(s) dont {sorted(dico_solutions.keys(), key=lambda x: dico_solutions[x], reverse=True)[:5]}'
 	best_words = ', '.join(sorted(dico_solutions.keys(), key=lambda x: dico_solutions[x], reverse=True)[:5])
 	js.hint_output.innerHTML = f'{len(dico_solutions)} mot(s) possible(s) dont: {best_words}'
+
+	return dico_solutions
+
+def online_simulation_browser_best(dico_solutions, dico_n):
+	import js
+	message = ''
 
 	# Now compute 
 	best_moves = expected_remaining_moves(dico_solutions, dico_n)
@@ -234,6 +237,7 @@ def online_simulation_browser(dico_n):
 	else:
 		message += f' - je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés'
 
+	i_last_word = max([i for i in range(5) if len(js.document.getElementById("try_"+str(i)).value) == int(js.n_total_char)], default=-1)
 	js.document.getElementById("try_"+str(i_last_word+1)).value = best_word_to_try.lower()
 	js.updateButtonsContent(i_last_word+1)
 	return message
