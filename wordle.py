@@ -78,8 +78,17 @@ def save_to_json(result, json_name):
 	for i in range(1, max_nb_chars+1):
 		most_probable_word = max(result[i].keys(), key = lambda x: result[i][x]) if result[i] else ''
 		print(f'Mots à {i} lettres: {len(result[i])} ({most_probable_word})')
-	with open(json_name, 'w') as f:
+
+	# Write whole dict
+	with open(f'{json_name}.json', 'w') as f:
 		json.dump(result, f)
+
+	# Write small dict (1 per nb of letters)
+	for i in range(3, max_nb_chars+1):
+		if len(result[i]) < 10:
+			continue
+		with open(f'{json_name}_{i}.json', 'w') as f:
+			json.dump(result[i], f)
 
 
 ###############################################################################
@@ -201,6 +210,7 @@ def online_simulation(dico_n):
 	#for i, entropy in enumerate(estimates[::-1]):
 	#	archives.append( (entropy, i+1) )
 
+# Used by browser when importing this module
 def online_simulation_browser_filter(dico_n):
 	import js
 	dico_solutions = dico_n
@@ -223,6 +233,7 @@ def online_simulation_browser_filter(dico_n):
 
 	return dico_solutions
 
+# Used by browser when importing this module
 def online_simulation_browser_best(dico_solutions, dico_n):
 	import js
 	message = ''
@@ -265,19 +276,16 @@ def parse_user_input(word_trial):
 
 		return word_trial, convert_result(list_digits)
 
-def load_dico_local(lang, nb_letters):
-	json_name = 'parsed_en_dictionary.json' if lang == 'en' else 'parsed_fr_dictionary.json'
-	dico = json.load(open(join(dirname(__file__), json_name)))
-	dico = dico[nb_letters]
+def load_dico_local(json_name, nb_letters):
+	dico = json.load(open(join(dirname(__file__), f'{json_name}_{nb_letters}.json')))
 	return dico
 
+# Used by browser when importing this module
 async def load_dico_remote(lang, nb_letters):
 	from pyodide.http import pyfetch
-	json_fr = 'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/parsed_fr_dictionary.json'
-	json_en = 'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/parsed_en_dictionary.json'
-	response = await pyfetch(json_fr if lang == 'fr' else json_en)
+	json_name = f'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/dict_{lang}_{nb_letters}.json'
+	response = await pyfetch(json_name)
 	dico = await (response.json())
-	dico = dico[nb_letters]
 	return dico
 
 def adjust_dico(dico, top_words_only, prob):
@@ -310,6 +318,7 @@ probabilities: either original ones or bump very small probabilities or flattene
 	parser.add_argument('word_to_guess', nargs='?', default='', help='If known, provide the word to guess to run non-interactive game')
 	args = parser.parse_args()
 
+	json_name = 'dict_en' if args.en and not args.fr else 'dict_fr'
 	if args.build_dict:
 		if args.en:
 			dico = import_csv_scrabble('Collins Scrabble Words (2019).txt')	# https://drive.google.com/file/d/1oGDf1wjWp5RF_X9C7HoedhIWMh5uJs8s/view
@@ -317,13 +326,12 @@ probabilities: either original ones or bump very small probabilities or flattene
 		else:
 			dico = import_csv_scrabble('touslesmots.txt') 		# https://www.listesdemots.net/touslesmots.txt
 			dico = import_csv_worldlex('Fre.Freq.2.txt', dico)  # http://www.lexique.org/?page_id=250
-		json_name = 'parsed_en_dictionary.json' if args.en and not args.fr else 'parsed_fr_dictionary.json'
 		save_to_json(dico, json_name)
-		print('le dictionnaire est maintenant prêt')
+		print('les dictionnaires sont maintenant prêts')
 		return
 
 	# Load dictionnary
-	dico = load_dico_local('en' if args.en else 'fr', len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
+	dico = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
 	dico = adjust_dico(dico, args.words == 'top', args.prob)
 
 	if args.word_to_guess:
