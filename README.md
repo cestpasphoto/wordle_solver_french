@@ -7,7 +7,9 @@ A wordle solver with French dictionnary using Python based on
 
 # How to use it?
 
-Simply run `python3 wordle.py`: it will ask you how many letters and whether first letter is known. Then you need to give result. If you already know the word, you can use `python3 wordle.py your_word`.
+[Try it online](https://cestpasphoto.github.io/pyodide_wordle.html) using Pyodide (python in your browser).
+
+Or on your computer, simply run `python3 wordle.py`: it will ask you how many letters and whether first letter is known. Then you need to give result. If you already know the word, you can use `python3 wordle.py your_word`.
 
 First run should use side pickle which contains dictionnary, otherwise you need to download both links above and it will build such pickle and store it.
 During search, it will max out number of tested combinations
