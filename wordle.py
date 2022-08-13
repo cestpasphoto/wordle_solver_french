@@ -4,9 +4,13 @@ import unicodedata
 import json
 from math import sqrt
 import numpy as np
-from tqdm import tqdm
 from os.path import join, dirname
+
 import sys
+if sys.platform == 'emscripten':
+	def tqdm(it, **kw): return it
+else:
+	from tqdm import tqdm
 
 max_nb_chars = 10
 base = [3**i for i in range(max_nb_chars+1)]
@@ -143,7 +147,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 		#return remaining_moves, current_entropy-entropy
 		return remaining_moves
 
-	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False, disable=(sys.platform == 'emscripten')) ]
+	entropy_list = [ (word, estimator(word, prob if word in dico_solutions else 0)) for word, prob in tqdm(dico_admissible.items(), ncols=60, leave=False) ]
 	entropy_list = sorted(entropy_list, key=lambda x: x[1])
 	return entropy_list
 
@@ -162,37 +166,50 @@ def remove_based_on_first_letter(dico_n, c):
 	print(f'   taille du dictionnaire {len(dico_n)} -> {len(new_dico_n)} {sorted(new_dico_n.keys(), key=lambda x: new_dico_n[x], reverse=True)[:5]}')
 	return new_dico_n
 
-def simulation(word_to_find, dico_n):
+def simulation(word_to_find, dico_n, precomputed_first_guess=None):
 	dico_solutions = dico_n
 	best_word_to_try = None
 	while best_word_to_try != word_to_find:
-		best_moves = expected_remaining_moves(dico_solutions, dico_n)
-		best_word_to_try, nb_moves = best_moves[0]
-		if len(best_moves) > 3:
-			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
+		if precomputed_first_guess:
+			best_word_to_try = precomputed_first_guess
+			precomputed_first_guess = None
+			print(f'je me rappelle que le meilleur mot est {best_word_to_try.upper()}')
 		else:
-			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
+			best_moves = expected_remaining_moves(dico_solutions, dico_n)
+			best_word_to_try, nb_moves = best_moves[0]
+			if len(best_moves) > 3:
+				print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
+			else:
+				print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
 		result = convert_result(compute_result(best_word_to_try, word_to_find))
 		dico_solutions = remove_based_on_result(dico_solutions, best_word_to_try, result)
 
-def online_simulation(dico_n):
+def online_simulation(dico_n, precomputed={}):
 	user_input = input('Une idee de la premiere lettre, ou proposition de mot déjà faite (vide sinon) ? ')
 	if len(user_input) == 1:
 		dico_n = remove_based_on_first_letter(dico_n, user_input)
 		dico_solutions = dico_n
+		precomputed_first_guess = precomputed.get(user_input)
 	elif len(user_input) > 1:
 		word_trial, trial_result = parse_user_input(user_input)
 		dico_solutions = remove_based_on_result(dico_n, word_trial, trial_result)
+		precomputed_first_guess = None
 	else:
 		dico_solutions = dico_n
+		precomputed_first_guess = precomputed.get('0')
 
 	while len(dico_solutions) > 1:
-		best_moves = expected_remaining_moves(dico_solutions, dico_n)
-		best_word_to_try, nb_moves = best_moves[0]
-		if len(best_moves) > 3:
-			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
+		if precomputed_first_guess:
+			best_word_to_try = precomputed_first_guess
+			precomputed_first_guess = None
+			print(f'je tente {best_word_to_try.upper()} de memoire')
 		else:
-			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
+			best_moves = expected_remaining_moves(dico_solutions, dico_n)
+			best_word_to_try, nb_moves = best_moves[0]
+			if len(best_moves) > 3:
+				print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
+			else:
+				print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
 		best_word_to_try, result = parse_user_input(best_word_to_try)
 		dico_solutions = remove_based_on_result(dico_solutions, best_word_to_try, result)
 
@@ -263,7 +280,7 @@ def parse_user_input(word_trial):
 
 def load_dico_local(json_name, nb_letters):
 	dico = json.load(open(join(dirname(__file__), f'{json_name}_{nb_letters}.json')))
-	return dico['words'], dico.get('precomputed')
+	return dico['words'], dico.get('precomputed', {})
 
 # Used by browser when importing this module
 async def load_dico_remote(lang, nb_letters):
@@ -271,7 +288,7 @@ async def load_dico_remote(lang, nb_letters):
 	json_name = f'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/dict_{lang}_{nb_letters}.json'
 	response = await pyfetch(json_name)
 	dico = await (response.json())
-	return dico['words']
+	return dico['words'], dico.get('precomputed', {})
 
 def adjust_dico(dico, top_words_only, prob):
 	# Adjust words probability
@@ -346,15 +363,18 @@ probabilities: either original ones or bump very small probabilities or flattene
 		return
 
 	# Load dictionnary
-	dico, _ = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
+	dico, precomputed = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
 	dico = adjust_dico(dico, args.words == 'top', args.prob)
 
 	if args.word_to_guess:
 		if input('On suppose connaitre la 1e lettre ? (o/n):  ').lower() == 'o':
 			dico = remove_based_on_first_letter(dico, args.word_to_guess[0])
-		simulation(args.word_to_guess, dico)
+			precomputed_first_guess = precomputed.get(args.word_to_guess[0])
+		else:
+			precomputed_first_guess = precomputed.get('0')
+		simulation(args.word_to_guess, dico, precomputed_first_guess)
 	else:
-		online_simulation(dico)
+		online_simulation(dico, precomputed)
 
 if __name__ == "__main__":
 	main()
