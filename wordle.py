@@ -288,6 +288,27 @@ def adjust_dico(dico, top_words_only, prob):
 
 	return dico
 
+def compute_best_words(dico):
+	global max_combinations_to_try, min_words_to_try
+	max_combinations_to_try = 2**31
+	alphabet = list(map(chr, range(ord('a'), ord('z')+1)))
+
+	computed_words = {}
+	for first_letter in alphabet+['0']:
+		smalldico = remove_based_on_first_letter(dico, first_letter) if first_letter != '0' else dico
+		if len(smalldico) == 0:
+			continue
+		best_moves = expected_remaining_moves(smalldico, smalldico)
+
+		# Select popular word amongst the best one
+		best_nb_moves = best_moves[0][1]
+		top_moves = [m for m in best_moves[:10] if m[1] <= 1.05*best_nb_moves]
+		top_move = max(top_moves, key=lambda x: dico[x[0]])
+		print(f'{first_letter}: {best_moves[0]} -> {top_move} | {best_moves[:10]}')
+		computed_words[first_letter] = top_move[0]
+
+	return computed_words
+
 ###################################################################################
 
 def main():
@@ -296,6 +317,7 @@ def main():
 	parser.add_argument('--fr'         , action='store_true', help='Use french dictionnary (default)')
 	parser.add_argument('--en'         , action='store_true', help='Use english dictionnary')
 	parser.add_argument('--build-dict' , action='store_true', help='Build dictionnary from list of words')
+	parser.add_argument('--pre-compute' , type=int, default=None, help='Precompute and store best words as trials, specify nb of letters')
 	parser.add_argument('--words', '-w', default='top', choices=['all', 'top'], help='Which words to use: "all" or "top" (default)')
 	parser.add_argument('--prob',  '-p', default='hard', choices=['average', 'hard', 'original', 'sqrt', 'equal', 'nosmall', 'sqrt_nosmall'], help='Choose words\
 probabilities: either original ones or bump very small probabilities or flattened a bit\
@@ -315,6 +337,13 @@ probabilities: either original ones or bump very small probabilities or flattene
 		print('les dictionnaires sont maintenant prêts')
 		return
 
+	if args.pre_compute:
+		dico, _ = load_dico_local(json_name, args.pre_compute)
+		dico = adjust_dico(dico, args.words == 'top', args.prob)
+		computed_words = compute_best_words(dico)
+		with open(f'{json_name}_{args.pre_compute}.json', 'w') as f:
+			json.dump({'precomputed': computed_words, 'words': dico}, f)
+		return
 
 	# Load dictionnary
 	dico, _ = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
