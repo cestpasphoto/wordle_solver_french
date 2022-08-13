@@ -14,9 +14,6 @@ max_combinations_to_try = 2000000
 min_words_to_try = 200
 default_freq = 0.001
 
-estimates = []
-archives = []
-
 def import_csv_scrabble(filename):
 	result = []
 	for i in range(max_nb_chars+1): result.append({})
@@ -38,7 +35,6 @@ def import_csv_scrabble(filename):
 					result[n][word_normalized] = default_freq
 
 	return result
-
 
 def import_csv_worldlex(filename, existing_db, freq_field=None):
 	new_db = []
@@ -88,7 +84,7 @@ def save_to_json(result, json_name):
 		if len(result[i]) < 10:
 			continue
 		with open(f'{json_name}_{i}.json', 'w') as f:
-			json.dump(result[i], f)
+			json.dump({'words': result[i]}, f)
 
 
 ###############################################################################
@@ -127,8 +123,8 @@ def distribution_possibilities(proposed_word, dico_n):
 		result = convert_result( compute_result(proposed_word, solution_word) )
 		distribution[result] += prob
 	# compute entropy
-	distribution = distribution[distribution!=0] / distribution.sum()
-	entropy = -(distribution * np.log2(distribution)).sum()
+	distribution_norm = distribution[distribution!=0] / distribution.sum()
+	entropy = -(distribution_norm * np.log2(distribution_norm)).sum()
 	return distribution, entropy
 
 def expected_remaining_moves(dico_solutions, dico_admissible):
@@ -143,7 +139,7 @@ def expected_remaining_moves(dico_solutions, dico_admissible):
 	def estimator(w, p):
 		p_normalized = p/total
 		_, entropy = distribution_possibilities(w, dico_solutions)
-		remaining_moves = round( (1-p_normalized) * (1.24+(current_entropy-entropy)*0.71) , 2)
+		remaining_moves = round( (1-p_normalized) * (1.24+(current_entropy-entropy)*0.71) , 4)
 		#return remaining_moves, current_entropy-entropy
 		return remaining_moves
 
@@ -163,7 +159,7 @@ def remove_based_on_first_letter(dico_n, c):
 	new_dico_n = {
 		w: p for w, p in dico_n.items() if w[0] == c
 	}
-	print(f'   taille du dictionnaire {len(dico_n)} -> {sorted(new_dico_n.keys(), key=lambda x: new_dico_n[x], reverse=True)[:5]}')
+	print(f'   taille du dictionnaire {len(dico_n)} -> {len(new_dico_n)} {sorted(new_dico_n.keys(), key=lambda x: new_dico_n[x], reverse=True)[:5]}')
 	return new_dico_n
 
 def simulation(word_to_find, dico_n):
@@ -176,13 +172,8 @@ def simulation(word_to_find, dico_n):
 			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
 		else:
 			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
-		#estimates.append(entropy)
 		result = convert_result(compute_result(best_word_to_try, word_to_find))
 		dico_solutions = remove_based_on_result(dico_solutions, best_word_to_try, result)
-
-	# Archivage infos
-	#for i, entropy in enumerate(estimates[::-1]):
-	#	archives.append( (entropy, i+1) )
 
 def online_simulation(dico_n):
 	user_input = input('Une idee de la premiere lettre, ou proposition de mot déjà faite (vide sinon) ? ')
@@ -202,13 +193,8 @@ def online_simulation(dico_n):
 			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés, il y avait aussi {best_moves[1]} et {best_moves[2]}')
 		else:
 			print(f'je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés')
-		#estimates.append(entropy)
 		best_word_to_try, result = parse_user_input(best_word_to_try)
 		dico_solutions = remove_based_on_result(dico_solutions, best_word_to_try, result)
-
-	# Archivage infos
-	#for i, entropy in enumerate(estimates[::-1]):
-	#	archives.append( (entropy, i+1) )
 
 # Used by browser when importing this module
 def online_simulation_browser_filter(dico_n):
@@ -253,7 +239,6 @@ def online_simulation_browser_best(dico_solutions, dico_n):
 	js.updateButtonsContent(i_last_word+1)
 	return message
 
-
 def parse_user_input(word_trial):
 	while True:
 		input_string = input('Résultat ? (1=mal placé, 2=bien placé, 0=sinon, x=arrêter ou bien autre mot). Ex: "00211":   ')
@@ -278,7 +263,7 @@ def parse_user_input(word_trial):
 
 def load_dico_local(json_name, nb_letters):
 	dico = json.load(open(join(dirname(__file__), f'{json_name}_{nb_letters}.json')))
-	return dico
+	return dico['words'], dico.get('precomputed')
 
 # Used by browser when importing this module
 async def load_dico_remote(lang, nb_letters):
@@ -286,7 +271,7 @@ async def load_dico_remote(lang, nb_letters):
 	json_name = f'https://raw.githubusercontent.com/cestpasphoto/wordle_solver_french/main/dict_{lang}_{nb_letters}.json'
 	response = await pyfetch(json_name)
 	dico = await (response.json())
-	return dico
+	return dico['words']
 
 def adjust_dico(dico, top_words_only, prob):
 	# Adjust words probability
@@ -330,8 +315,9 @@ probabilities: either original ones or bump very small probabilities or flattene
 		print('les dictionnaires sont maintenant prêts')
 		return
 
+
 	# Load dictionnary
-	dico = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
+	dico, _ = load_dico_local(json_name, len(args.word_to_guess) if args.word_to_guess else int(input('Combien de lettres ?  ')))
 	dico = adjust_dico(dico, args.words == 'top', args.prob)
 
 	if args.word_to_guess:
