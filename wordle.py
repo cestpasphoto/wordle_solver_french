@@ -252,8 +252,9 @@ def online_simulation_browser_best(dico_solutions, dico_n):
 		message += f' - je tente "{best_word_to_try.upper()}" avec {nb_moves} coup(s) estimés'
 
 	i_last_word = max([i for i in range(5) if len(js.document.getElementById("try_"+str(i)).value) == int(js.n_total_char)], default=-1)
-	js.document.getElementById("try_"+str(i_last_word+1)).value = best_word_to_try.lower()
-	js.updateButtonsContent(i_last_word+1)
+	if i_last_word+1 <= 4:
+		js.document.getElementById("try_"+str(i_last_word+1)).value = best_word_to_try.lower()
+		js.updateButtonsContent(i_last_word+1)
 	return message
 
 def parse_user_input(word_trial):
