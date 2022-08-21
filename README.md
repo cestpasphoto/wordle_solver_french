@@ -13,3 +13,5 @@ Or on your computer, simply run `python3 wordle.py`: it will ask you how many le
 
 First run should use side pickle which contains dictionnary, otherwise you need to download both links above and it will build such pickle and store it.
 During search, it will max out number of tested combinations
+
+And FYI best first 2-words intro for 5-letter quordle are: _moins_ + _carte_ or _mains_ + _routes_ in French, and _tired_ + _plans_ or _sound_ + _later_ in English (not matching to best first 1-word)
